@@ -4,7 +4,9 @@ go 1.17
 
 require (
 	github.com/m3db/prometheus_client_golang v0.8.1
+	github.com/opentracing/opentracing-go v1.1.0
 	github.com/uber-go/tally v3.3.15+incompatible
+	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	go.uber.org/cadence v0.19.0
 	go.uber.org/yarpc v1.55.0
 	go.uber.org/zap v1.13.0
@@ -31,7 +33,6 @@ require (
 	github.com/m3db/prometheus_common v0.1.0 // indirect
 	github.com/m3db/prometheus_procfs v0.8.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
-	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/pborman/uuid v0.0.0-20160209185913-a97ce2ca70fa // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -43,6 +44,7 @@ require (
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.4.0 // indirect
 	github.com/uber-go/mapdecode v1.0.0 // indirect
+	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	github.com/uber/tchannel-go v1.16.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect

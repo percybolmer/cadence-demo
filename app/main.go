@@ -2,10 +2,14 @@ package main
 
 import (
 	"fmt"
+	"io"
 	localprom "programmingpercy/cadence-tavern/prometheus"
 	_ "programmingpercy/cadence-tavern/workflows/greetings"
 	_ "programmingpercy/cadence-tavern/workflows/orders"
 
+	"github.com/opentracing/opentracing-go"
+	"github.com/uber/jaeger-client-go"
+	"github.com/uber/jaeger-client-go/config"
 	_ "go.uber.org/cadence/.gen/go/cadence"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/worker"
@@ -31,8 +35,12 @@ const (
 )
 
 func main() {
+	// Init Tracer
+	tracer, closer := initJaeger("tavern-worker-service")
+	defer closer.Close()
+
 	// Create the Worker service
-	worker, logger, err := newWorkerServiceClient()
+	worker, logger, err := newWorkerServiceClient(tracer)
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +61,7 @@ func main() {
 // It will handle Connecting and configuration of the client
 // Returns a Worker, the logger applied or an error
 // TODO expand this function to allow more configurations, will be done later in the article.
-func newWorkerServiceClient() (worker.Worker, *zap.Logger, error) {
+func newWorkerServiceClient(tracer opentracing.Tracer) (worker.Worker, *zap.Logger, error) {
 
 	// Create a logger to use for the service
 	logger, err := newLogger()
@@ -72,6 +80,7 @@ func newWorkerServiceClient() (worker.Worker, *zap.Logger, error) {
 	workerOptions := worker.Options{
 		Logger:       logger,
 		MetricsScope: metricsScope,
+		Tracer:       tracer,
 	}
 	// Create the connection that the worker should use
 	connection, err := newCadenceConnection(ClientName)
@@ -120,4 +129,23 @@ func newLogger() (*zap.Logger, error) {
 	}
 
 	return logger, nil
+}
+
+// initJaeger returns an instance of Jaeger Tracer that samples 100% of traces and logs all spans to stdout.
+func initJaeger(service string) (opentracing.Tracer, io.Closer) {
+	cfg := &config.Configuration{
+		ServiceName: service,
+		Sampler: &config.SamplerConfig{
+			Type:  "const",
+			Param: 1,
+		},
+		Reporter: &config.ReporterConfig{
+			LogSpans: true,
+		},
+	}
+	tracer, closer, err := cfg.NewTracer(config.Logger(jaeger.StdLogger))
+	if err != nil {
+		panic(fmt.Sprintf("ERROR: cannot init Jaeger: %v\n", err))
+	}
+	return tracer, closer
 }

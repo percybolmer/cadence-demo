@@ -1,5 +1,10 @@
 version: '3'
 services:
+  jaeger:
+      image: jaegertracing/all-in-one:latest
+      ports:
+        - "6831:6831/udp"
+        - "16686:16686"
   mysql:
     image: mysql:5.7
     ports:

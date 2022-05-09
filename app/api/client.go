@@ -3,13 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"io"
 	"net/http"
 	"programmingpercy/cadence-tavern/customer"
 	localprom "programmingpercy/cadence-tavern/prometheus"
 	"programmingpercy/cadence-tavern/workflows/orders"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
+	"github.com/uber/jaeger-client-go"
+	"github.com/uber/jaeger-client-go/config"
 	"go.uber.org/cadence/.gen/go/cadence/workflowserviceclient"
 	"go.uber.org/cadence/client"
 	"go.uber.org/yarpc"
@@ -40,6 +43,8 @@ type CadenceClient struct {
 	orderWorkflowID string
 	// orderWorkflowRunID is the run id of the order workflow
 	orderWorkflowRunID string
+
+	logger *zap.Logger
 }
 
 // SetupCadenceClient is used to create the client we can use
@@ -81,8 +86,12 @@ func SetupCadenceClient() (*CadenceClient, error) {
 	// use WorkerScope
 	metricsScope := localprom.NewWorkerScope(reporter)
 
+	// Init Jeager
+	tracer, _ := initJaeger("tavern-api")
+
 	opts := &client.Options{
 		MetricsScope: metricsScope,
+		Tracer:       tracer,
 	}
 
 	// Build the Cadence Client
@@ -92,6 +101,7 @@ func SetupCadenceClient() (*CadenceClient, error) {
 		dispatcher: dispatcher,
 		wfClient:   wfClient,
 		client:     cadenceClient,
+		logger:     logger,
 	}, nil
 
 }
@@ -113,7 +123,6 @@ func (cc *CadenceClient) GreetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Trigger Workflow here
-	log.Print(visitor)
 
 	// Create workflow options, this is the same as the CLI, a task list, a timeout timer
 	opts := client.StartWorkflowOptions{
@@ -121,7 +130,7 @@ func (cc *CadenceClient) GreetUser(w http.ResponseWriter, r *http.Request) {
 		ExecutionStartToCloseTimeout: time.Second * 10,
 	}
 
-	log.Println("Starting workflow")
+	cc.logger.Info("Starting workflow")
 	// This is how you Execute a Workflow and wait for it to finish
 	// This is useful if you have synchronous workflows that you want to leverage as functions
 	future, err := cc.client.ExecuteWorkflow(r.Context(), opts, GreetingsWorkflow, visitor)
@@ -130,12 +139,13 @@ func (cc *CadenceClient) GreetUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Println("Get Result from  workflow")
 	// Fetch result once done and marshal into
 	if err := future.Get(r.Context(), &visitor); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	cc.logger.Info("Finished executing greetings")
 
 	data, _ := json.Marshal(visitor)
 	w.WriteHeader(http.StatusOK)
@@ -153,7 +163,7 @@ func (cc *CadenceClient) Order(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Print(orderInfo)
+	cc.logger.Info("Sending signal about order", zap.String("by", orderInfo.By))
 	// Send a signal to the Workflow
 	// We need to provide a Workflow ID, the RUN ID of the workflow, and the Signal type
 	err = cc.client.SignalWorkflow(r.Context(), cc.orderWorkflowID, cc.orderWorkflowRunID, "order", orderInfo)
@@ -162,8 +172,26 @@ func (cc *CadenceClient) Order(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("Signalled system of order")
-
 	w.WriteHeader(http.StatusOK)
 
+}
+
+// initJaeger returns an instance of Jaeger Tracer that samples 100% of traces and logs all spans to stdout.
+func initJaeger(service string) (opentracing.Tracer, io.Closer) {
+	cfg := &config.Configuration{
+		ServiceName: service,
+		Sampler: &config.SamplerConfig{
+			Type:  jaeger.SamplerTypeConst,
+			Param: 1,
+		},
+		Reporter: &config.ReporterConfig{
+			LogSpans: true,
+		},
+	}
+	tracer, closer, err := cfg.NewTracer(config.Logger(jaeger.StdLogger))
+	if err != nil {
+		panic(fmt.Sprintf("ERROR: cannot init Jaeger: %v\n", err))
+	}
+
+	return tracer, closer
 }
